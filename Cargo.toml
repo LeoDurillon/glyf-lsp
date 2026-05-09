@@ -1,0 +1,19 @@
+[package]
+name = "glyf-lsp"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "glyf-lsp"
+path = "src/main.rs"
+
+[dependencies]
+glyf-core = "0.1.0"
+tower-lsp = "0.20"
+tokio = { version = "1", features = ["full"] }
+dashmap = "6"
+regex = "1.12.3"
+
+[dev-dependencies]
+serde_json = "1"
+tower = { version = "0.4", features = ["util"] }
