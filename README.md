@@ -43,7 +43,9 @@ somewhere on your `$PATH`.
 
 ### Zed
 
-Install the **glyf** extension directly from the Zed extension marketplace, or search for `glyf` inside Zed via `zed: extensions`.
+The Zed extension is not yet published to the marketplace.
+Install it as a dev extension by following the instructions in the
+[zed-glyf repository](https://github.com/LeoDurillon/zed-glyf).
 
 ---
 
