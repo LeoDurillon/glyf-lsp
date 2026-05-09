@@ -4,7 +4,7 @@ use regex::{Captures, Regex};
 use tower_lsp::lsp_types::{Position, Range};
 
 /// Trims whitespace and strips an optional `return ` prefix.
-pub fn extract_abbreviation<'a>(line: &'a str, cursor: u32) -> &'a str {
+pub fn extract_abbreviation(line: &str, cursor: u32) -> &str {
     let abbr = line[..cursor.min(line.len() as u32) as usize].trim();
     abbr.strip_prefix("return ").map(str::trim).unwrap_or(abbr)
 }
