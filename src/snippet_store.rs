@@ -19,14 +19,12 @@ impl SnippetStore {
     }
 
     fn get_default_snippet(&self) -> &HashMap<String, String> {
-        let base_snippet = SNIPPETS.get_or_init(|| {
+        SNIPPETS.get_or_init(|| {
             BASE_SNIPPET
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect()
-        });
-
-        return base_snippet;
+        })
     }
 
     /// Reads `initialization_options.snippets` and stores every entry.

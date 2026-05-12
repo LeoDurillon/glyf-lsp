@@ -44,7 +44,7 @@ impl GlyfLsp {
     }
 
     async fn expand_abbreviation(&self, abbr: &str, uri: String) -> Option<String> {
-        let mode = match uri.split('.').last() {
+        let mode = match uri.split('.').next_back() {
             Some("jsx") | Some("tsx") => glyf_core::config::ParserMode::JSX,
             _ => glyf_core::config::ParserMode::HTML,
         };
