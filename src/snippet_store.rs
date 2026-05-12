@@ -1,7 +1,11 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::OnceLock};
 
 use dashmap::DashMap;
 use tower_lsp::lsp_types::InitializeParams;
+
+use crate::consts::BASE_SNIPPET;
+
+static SNIPPETS: OnceLock<HashMap<String, String>> = OnceLock::new();
 
 pub struct SnippetStore {
     entries: DashMap<String, String>,
@@ -14,8 +18,23 @@ impl SnippetStore {
         }
     }
 
+    fn get_default_snippet(&self) -> &HashMap<String, String> {
+        let base_snippet = SNIPPETS.get_or_init(|| {
+            BASE_SNIPPET
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect()
+        });
+
+        return base_snippet;
+    }
+
     /// Reads `initialization_options.snippets` and stores every entry.
     pub fn load_from_params(&self, params: &InitializeParams) {
+        let defaults = self.get_default_snippet();
+        for (k, v) in defaults {
+            self.entries.insert(k.clone(), v.clone());
+        }
         let Some(opts) = params.initialization_options.as_ref() else {
             return;
         };
@@ -78,21 +97,21 @@ mod tests {
             initialization_options: None,
             ..Default::default()
         });
-        assert!(store.to_hashmap().is_empty());
+        assert!(store.to_hashmap().len() == BASE_SNIPPET.len());
     }
 
     #[test]
     fn missing_snippets_key_is_noop() {
         let store = SnippetStore::new();
         store.load_from_params(&params(json!({ "other": "irrelevant" })));
-        assert!(store.to_hashmap().is_empty());
+        assert!(store.to_hashmap().len() == BASE_SNIPPET.len());
     }
 
     #[test]
     fn non_object_snippets_value_is_noop() {
         let store = SnippetStore::new();
         store.load_from_params(&params(json!({ "snippets": "not-an-object" })));
-        assert!(store.to_hashmap().is_empty());
+        assert_eq!(store.to_hashmap().len(), BASE_SNIPPET.len());
     }
 
     #[test]
@@ -113,7 +132,7 @@ mod tests {
             "snippets": { "valid": "div", "num": 42, "obj": {} }
         })));
         let map = store.to_hashmap();
-        assert_eq!(map.len(), 1);
+        assert_eq!(map.len(), BASE_SNIPPET.len() + 1);
         assert!(map.contains_key("valid"));
     }
 
@@ -127,7 +146,7 @@ mod tests {
         store.load_from_params(&params(json!({
             "snippets": { "a": "div", "b": "span", "c": "p" }
         })));
-        assert_eq!(store.to_hashmap().len(), 3);
+        assert_eq!(store.to_hashmap().len(), BASE_SNIPPET.len() + 2);
     }
 
     #[test]
@@ -138,6 +157,6 @@ mod tests {
         let mut map = store.to_hashmap();
         map.insert("extra".to_string(), "Extra".to_string());
         // original store still has only one entry
-        assert_eq!(store.to_hashmap().len(), 1);
+        assert_eq!(store.to_hashmap().len(), BASE_SNIPPET.len() + 1);
     }
 }

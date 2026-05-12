@@ -1,10 +1,11 @@
+mod consts;
 pub mod helper;
 pub mod snippet_store;
 
 use std::sync::LazyLock;
 
 use dashmap::DashMap;
-use glyf_core::parser::GlyfError;
+use glyf_core::{config::Config, parser::GlyfError};
 use regex::Regex;
 use tower_lsp::{
     Client, LanguageServer,
@@ -42,9 +43,20 @@ impl GlyfLsp {
             .await;
     }
 
-    async fn expand_abbreviation(&self, abbr: &str) -> Option<String> {
-        let custom = self.snippets.to_hashmap();
-        match glyf_core::expand(abbr, None, Some(&custom)) {
+    async fn expand_abbreviation(&self, abbr: &str, uri: String) -> Option<String> {
+        let mode = match uri.split('.').last() {
+            Some("jsx") | Some("tsx") => glyf_core::config::ParserMode::JSX,
+            _ => glyf_core::config::ParserMode::HTML,
+        };
+
+        match glyf_core::expand(
+            abbr,
+            None,
+            Some(Config {
+                mode,
+                snippets: self.snippets.to_hashmap(),
+            }),
+        ) {
             Ok(html) => Some(html),
             Err(err) => {
                 self.log_glyf_error(err).await;
@@ -132,7 +144,7 @@ impl LanguageServer for GlyfLsp {
         let line = content.lines().nth(pos.line as usize).unwrap_or("");
         let abbr = extract_abbreviation(line, pos.character);
 
-        let Some(expanded) = self.expand_abbreviation(abbr).await else {
+        let Some(expanded) = self.expand_abbreviation(abbr, uri).await else {
             return Ok(None);
         };
 

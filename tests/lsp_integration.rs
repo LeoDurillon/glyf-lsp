@@ -282,7 +282,7 @@ async fn custom_multi_element_snippet_renders_full_tree() {
     let result = complete(&mut svc, 2, "file:///test.tsx", 0, 4).await;
     assert_eq!(
         result[0]["textEdit"]["newText"],
-        json!("<div class=\"card\">\n\t<p class=\"card-body\">${1}</p>\n</div>")
+        json!("<div className=\"card\">\n\t<p className=\"card-body\">${1}</p>\n</div>")
     );
 }
 
