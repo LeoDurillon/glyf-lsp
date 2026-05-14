@@ -84,9 +84,7 @@ impl GlyfLsp {
     }
 
     fn get_next_input_suggestion(&self, abbr: &str, range: Range) -> Option<Vec<CompletionItem>> {
-        let Some(abbr_end) = abbr.split(|c| c == '>' || c == '+').last() else {
-            return None;
-        };
+        let abbr_end = abbr.split(['>', '+']).next_back()?;
 
         let suggested_completion = self
             .snippets
@@ -98,7 +96,7 @@ impl GlyfLsp {
                 CompletionItem {
                     label: format!("Glyf: {}", k),
                     kind: Some(CompletionItemKind::TEXT),
-                    documentation: Some(self.create_documentation(&k)),
+                    documentation: Some(self.create_documentation(k)),
                     detail: Some("Expand next input".into()),
                     insert_text_format: Some(InsertTextFormat::PLAIN_TEXT),
                     filter_text: Some(format!(
@@ -116,7 +114,7 @@ impl GlyfLsp {
             })
             .collect::<Vec<CompletionItem>>();
 
-        return Some(suggested_completion);
+        Some(suggested_completion)
     }
 }
 
