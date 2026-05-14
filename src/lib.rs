@@ -72,7 +72,8 @@ impl GlyfLsp {
             documentation: Some(self.create_documentation(&expanded)),
             detail: Some("Expand Glyf abbreviation".into()),
             insert_text_format: Some(InsertTextFormat::SNIPPET),
-            sort_text: Some("!".to_string()),
+            filter_text: Some(abbr.to_string()),
+            sort_text: Some("~".to_string()),
             preselect: Some(true),
             text_edit: Some(CompletionTextEdit::Edit(TextEdit {
                 range,
@@ -80,6 +81,42 @@ impl GlyfLsp {
             })),
             ..Default::default()
         }
+    }
+
+    fn get_next_input_suggestion(&self, abbr: &str, range: Range) -> Option<Vec<CompletionItem>> {
+        let Some(abbr_end) = abbr.split(|c| c == '>' || c == '+').last() else {
+            return None;
+        };
+
+        let suggested_completion = self
+            .snippets
+            .to_hashmap()
+            .keys()
+            .filter(|k| k.starts_with(abbr_end) && k.len() > abbr_end.len())
+            .map(|k| {
+                let expanded = format!("{}{}", &abbr[..abbr.len() - abbr_end.len()], k);
+                CompletionItem {
+                    label: format!("Glyf: {}", k),
+                    kind: Some(CompletionItemKind::TEXT),
+                    documentation: Some(self.create_documentation(&k)),
+                    detail: Some("Expand next input".into()),
+                    insert_text_format: Some(InsertTextFormat::PLAIN_TEXT),
+                    filter_text: Some(format!(
+                        "...{}",
+                        &expanded[expanded.len().saturating_sub(10)..]
+                    )),
+                    sort_text: Some("|".to_string()),
+                    preselect: Some(true),
+                    text_edit: Some(CompletionTextEdit::Edit(TextEdit {
+                        range,
+                        new_text: expanded,
+                    })),
+                    ..Default::default()
+                }
+            })
+            .collect::<Vec<CompletionItem>>();
+
+        return Some(suggested_completion);
     }
 }
 
@@ -152,6 +189,13 @@ impl LanguageServer for GlyfLsp {
 
         let item = self.build_completion_item(abbr, insert_tabstops(&expanded), range);
 
-        Ok(Some(CompletionResponse::Array(vec![item])))
+        let Some(suggestions) = self.get_next_input_suggestion(abbr, range) else {
+            return Ok(Some(CompletionResponse::Array(vec![item])));
+        };
+
+        let mut item = vec![item];
+        item.extend(suggestions);
+
+        Ok(Some(CompletionResponse::Array(item)))
     }
 }
