@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A Language Server Protocol implementation for [glyph](https://github.com/LeoDurillon/glyf-core)
+A Language Server Protocol implementation for [glyf](https://github.com/LeoDurillon/glyf-core)
 abbreviation expansion. Write compact abbreviations and get full HTML or JSX structures as
 editor completions.
 
