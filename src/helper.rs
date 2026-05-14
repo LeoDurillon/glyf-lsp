@@ -3,10 +3,30 @@ use std::{cell::Cell, sync::LazyLock};
 use regex::{Captures, Regex};
 use tower_lsp::lsp_types::{Position, Range};
 
-/// Trims whitespace and strips an optional `return ` prefix.
+/// Strips any complete HTML tags at the start of `s`.
+/// Safe because `<` can no longer appear in a Glyf abbreviation
+/// (the text content operator is now `>>`), so any leading `<…>`
+/// is unambiguously HTML context surrounding the user's abbreviation.
+fn strip_html_context(mut s: &str) -> &str {
+    loop {
+        s = s.trim_start();
+        if s.starts_with('<') {
+            match s.find('>') {
+                Some(pos) => s = &s[pos + 1..],
+                None => break, // unclosed tag — stop stripping
+            }
+        } else {
+            break;
+        }
+    }
+    s.trim_start()
+}
+
+/// Trims whitespace leading tags and strips an optional `return ` prefix.
 pub fn extract_abbreviation(line: &str, cursor: u32) -> &str {
     let abbr = line[..cursor.min(line.len() as u32) as usize].trim();
-    abbr.strip_prefix("return ").map(str::trim).unwrap_or(abbr)
+    let abbr = abbr.strip_prefix("return ").map(str::trim).unwrap_or(abbr);
+    strip_html_context(abbr)
 }
 
 /// Get the range of the abbreviation, given the cursor position and the abbreviation length
@@ -106,6 +126,36 @@ mod tests {
         #[test]
         fn cursor_at_zero_returns_empty_string() {
             assert_eq!(extract_abbreviation("div", 0), "");
+        }
+
+        #[test]
+        fn strips_leading_html_tag() {
+            assert_eq!(extract_abbreviation("<div>abbr", 9), "abbr");
+        }
+
+        #[test]
+        fn strips_tag_with_attributes() {
+            assert_eq!(extract_abbreviation("<div class=\"foo\">abbr", 21), "abbr");
+        }
+
+        #[test]
+        fn strips_multiple_leading_tags() {
+            assert_eq!(extract_abbreviation("<div><span>abbr", 15), "abbr");
+        }
+
+        #[test]
+        fn tag_alone_returns_empty() {
+            assert_eq!(extract_abbreviation("<div>", 5), "");
+        }
+
+        #[test]
+        fn preserves_text_content_operator() {
+            assert_eq!(extract_abbreviation("<div>p>>Hello", 13), "p>>Hello");
+        }
+
+        #[test]
+        fn non_html_prefix_is_untouched() {
+            assert_eq!(extract_abbreviation("div>p", 5), "div>p");
         }
     }
 
