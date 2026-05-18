@@ -42,7 +42,7 @@ pub fn abbreviation_range(pos: Position, abbr_len: usize) -> Range {
 
 static OPENING_TAG: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<[^/][^>]+/?>").unwrap());
 
-static EMPTY_ATTR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#" ([\w-]+)="\$""#).unwrap());
+static EMPTY_ATTR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#" ([\w-]+)="?\$"?"#).unwrap());
 
 static EMPTY_ELEM: LazyLock<Regex> = LazyLock::new(|| Regex::new(r">(</[\w-]*>)").unwrap());
 
@@ -67,6 +67,68 @@ pub fn insert_tabstops(html: &str) -> String {
             format!(">${{{}}}{}", n, &capture[1])
         })
         .into_owned()
+}
+
+/// Extracts the text covered by an LSP `Range` from a full document string.
+///
+/// Handles both single-line and multi-line selections. Character indices that
+/// exceed the actual line length are clamped to avoid panics on malformed ranges.
+pub fn extract_range(content: &str, range: Range) -> String {
+    let lines: Vec<&str> = content.lines().collect();
+
+    if range.start.line == range.end.line {
+        let line = lines.get(range.start.line as usize).unwrap_or(&"");
+        let start = (range.start.character as usize).min(line.len());
+        let end = (range.end.character as usize).min(line.len());
+        line[start..end].to_string()
+    } else {
+        let mut out = String::new();
+        for (i, &line) in lines.iter().enumerate() {
+            let ln = i as u32;
+            if ln < range.start.line || ln > range.end.line {
+                continue;
+            }
+            if ln == range.start.line {
+                let start = (range.start.character as usize).min(line.len());
+                out.push_str(&line[start..]);
+                out.push('\n');
+            } else if ln == range.end.line {
+                let end = (range.end.character as usize).min(line.len());
+                out.push_str(&line[..end]);
+            } else {
+                out.push_str(line);
+                out.push('\n');
+            }
+        }
+        out
+    }
+}
+
+pub fn compute_tag_opening_closing_range(content: &str, pos: Position) -> Option<Range> {
+    let line = content.lines().nth(pos.line as usize)?;
+
+    let tab_length = line.len() - line.trim_start().len();
+
+    content.lines().enumerate().find_map(|(i, line)| {
+        if i <= pos.line as usize {
+            return None;
+        }
+        let curr_tab_length = line.len() - line.trim_start().len();
+
+        if curr_tab_length != tab_length {
+            return None;
+        }
+        Some(Range {
+            start: Position {
+                line: pos.line,
+                character: 0,
+            },
+            end: Position {
+                line: i as u32,
+                character: line.len() as u32,
+            },
+        })
+    })
 }
 
 #[cfg(test)]

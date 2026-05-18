@@ -2,26 +2,31 @@ mod consts;
 pub mod helper;
 pub mod snippet_store;
 
-use std::sync::LazyLock;
+use std::{collections::HashMap, sync::LazyLock};
 
 use dashmap::DashMap;
-use glyf_core::{config::Config, parser::GlyfError};
+use glyf_core::{compress, config::Config, parser::GlyfError};
 use regex::Regex;
 use tower_lsp::{
     Client, LanguageServer,
     jsonrpc::Result,
     lsp_types::{
-        CompletionItem, CompletionItemKind, CompletionOptions, CompletionParams,
-        CompletionResponse, CompletionTextEdit, DidChangeTextDocumentParams,
-        DidOpenTextDocumentParams, Documentation, InitializeParams, InitializeResult,
-        InitializedParams, InsertTextFormat, MessageType, Range, ServerCapabilities,
-        TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit,
+        CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams,
+        CodeActionProviderCapability, CodeActionResponse, CompletionItem, CompletionItemKind,
+        CompletionOptions, CompletionParams, CompletionResponse, CompletionTextEdit,
+        DidChangeTextDocumentParams, DidOpenTextDocumentParams, Documentation, InitializeParams,
+        InitializeResult, InitializedParams, InsertTextFormat, MessageType, Position, Range,
+        ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit,
+        WorkspaceEdit,
     },
 };
 
 pub use snippet_store::SnippetStore;
 
-use crate::helper::{abbreviation_range, extract_abbreviation, insert_tabstops};
+use crate::helper::{
+    abbreviation_range, compute_tag_opening_closing_range, extract_abbreviation, extract_range,
+    insert_tabstops,
+};
 
 pub struct GlyfLsp {
     pub client: Client,
@@ -31,6 +36,9 @@ pub struct GlyfLsp {
 
 const TRIGGER_CHARACTERS: &[&str] = &[".", ":", ">", "+", "*", "("];
 static PLACEHOLDER_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$\{\d+\}").unwrap());
+static ONE_LINE_TAG_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(^<.+/>$|^<.+?>[\w\s]+</\w+>$)").unwrap());
+static HTML_TAG_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(^<.+)").unwrap());
 
 impl GlyfLsp {
     fn create_documentation(&self, expanded: &str) -> Documentation {
@@ -52,10 +60,7 @@ impl GlyfLsp {
         match glyf_core::expand(
             abbr,
             None,
-            Some(Config {
-                mode,
-                snippets: self.snippets.to_hashmap(),
-            }),
+            Some(Config::new(mode, self.snippets.to_hashmap())),
         ) {
             Ok(html) => Some(html),
             Err(err) => {
@@ -85,6 +90,9 @@ impl GlyfLsp {
 
     fn get_next_input_suggestion(&self, abbr: &str, range: Range) -> Option<Vec<CompletionItem>> {
         let abbr_end = abbr.split(['>', '+']).next_back()?;
+        if abbr_end.trim().is_empty() {
+            return None;
+        }
 
         let suggested_completion = self
             .snippets
@@ -116,6 +124,27 @@ impl GlyfLsp {
 
         Some(suggested_completion)
     }
+
+    fn get_range_from_content(&self, range: Range, content: &str) -> Option<Range> {
+        let pos = range.start;
+        let line = content.lines().nth(pos.line as usize).unwrap_or("");
+        if !HTML_TAG_REGEX.is_match(line.trim()) {
+            return None;
+        }
+        if ONE_LINE_TAG_REGEX.is_match(line.trim()) {
+            return Some(Range {
+                start: Position {
+                    line: pos.line,
+                    character: (line.len() - line.trim_start().len()) as u32,
+                },
+                end: Position {
+                    line: pos.line,
+                    character: line.trim_end().len() as u32,
+                },
+            });
+        }
+        compute_tag_opening_closing_range(content, pos)
+    }
 }
 
 #[tower_lsp::async_trait]
@@ -134,6 +163,7 @@ impl LanguageServer for GlyfLsp {
             capabilities: ServerCapabilities {
                 completion_provider: Some(completion_options),
                 text_document_sync: Some(text_document_sync),
+                code_action_provider: Some(CodeActionProviderCapability::Simple(true)),
                 ..Default::default()
             },
             ..Default::default()
@@ -195,5 +225,53 @@ impl LanguageServer for GlyfLsp {
         item.extend(suggestions);
 
         Ok(Some(CompletionResponse::Array(item)))
+    }
+
+    async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
+        let uri = params.text_document.uri.to_string();
+        let Some(content) = self.documents.get(&uri) else {
+            return Ok(None);
+        };
+
+        let range = if params.range.start == params.range.end {
+            self.get_range_from_content(params.range, &content)
+        } else {
+            Some(params.range)
+        };
+
+        if range.is_none() {
+            return Ok(None);
+        }
+
+        let range = range.unwrap();
+
+        let selected = extract_range(&content, range);
+        if selected.trim().is_empty() {
+            return Ok(None);
+        }
+
+        let Ok(abbreviation) = compress(&selected.replace("  ", "").replace("\n", " ")) else {
+            return Ok(None);
+        };
+
+        let changes = HashMap::from([(
+            params.text_document.uri.clone(),
+            vec![TextEdit {
+                range,
+                new_text: abbreviation.clone(),
+            }],
+        )]);
+
+        let action = CodeAction {
+            title: "Compress to Glyf abbreviation".to_string(),
+            kind: Some(CodeActionKind::REFACTOR_REWRITE),
+            edit: Some(WorkspaceEdit {
+                changes: Some(changes),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        Ok(Some(vec![CodeActionOrCommand::CodeAction(action)]))
     }
 }

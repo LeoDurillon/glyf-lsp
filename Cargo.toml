@@ -1,6 +1,6 @@
 [package]
 name = "glyf-lsp"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 
 [[bin]]
@@ -8,7 +8,7 @@ name = "glyf-lsp"
 path = "src/main.rs"
 
 [dependencies]
-glyf-core = "0.2.2"
+glyf-core = "0.3.2"
 tower-lsp = "0.20"
 tokio = { version = "1", features = ["full"] }
 dashmap = "6"
